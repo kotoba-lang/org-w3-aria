@@ -164,6 +164,39 @@
     (is (= "combobox" (:a11y/role (find-by-id tree :select-el))))
     (is (= "textbox" (:a11y/role (find-by-id tree :textarea-el))))))
 
+;; ---- <progress>/<meter>/<dialog>/<hr>/<output> implicit roles -- none of
+;; these five were in implicit-roles at all, so each fell through to the
+;; generic default "generic". Per HTML-AAM's implicit-ARIA-semantics
+;; table: progress -> progressbar, meter -> meter, dialog -> dialog,
+;; hr -> separator, output -> status. progressbar/dialog in particular
+;; are two very common native widgets -- a real, materially broken
+;; accessibility gap, not cosmetic (a screen reader has no idea a real
+;; <dialog open> just became the modal focus, or that a <progress> is
+;; even a progress indicator at all). Confirmed via direct REPL
+;; reproduction before touching source. ----
+
+(deftest progress-meter-dialog-hr-output-have-their-own-implicit-roles
+  (let [d (doc [(el :page :main {} [:progress-el :meter-el :dialog-el :hr-el :output-el])
+                (el :progress-el :progress {:value "30" :max "100"})
+                (el :meter-el :meter {:value "3" :min "0" :max "10"})
+                (el :dialog-el :dialog {:open "open"})
+                (el :hr-el :hr)
+                (el :output-el :output)]
+               :page)
+        tree (aria/tree d)]
+    (is (= "progressbar" (:a11y/role (find-by-id tree :progress-el))))
+    (is (= "meter" (:a11y/role (find-by-id tree :meter-el))))
+    (is (= "dialog" (:a11y/role (find-by-id tree :dialog-el))))
+    (is (= "separator" (:a11y/role (find-by-id tree :hr-el))))
+    (is (= "status" (:a11y/role (find-by-id tree :output-el))))))
+
+(deftest explicit-role-still-overrides-the-new-implicit-role-mappings
+  (let [d (doc [(el :page :main {} [:progress-el])
+                (el :progress-el :progress {:role "img"})]
+               :page)
+        tree (aria/tree d)]
+    (is (= "img" (:a11y/role (find-by-id tree :progress-el))))))
+
 ;; ---- <option>/<optgroup> implicit roles, and <select size=N> (N>1, no
 ;; `multiple`) mapping to "listbox" per HTML-AAM -- previously <option>/
 ;; <optgroup> weren't in implicit-roles at all (fell through to "generic"),

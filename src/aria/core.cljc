@@ -44,7 +44,12 @@
    :select "combobox"
    :option "option"
    :optgroup "group"
-   :textarea "textbox"})
+   :textarea "textbox"
+   :progress "progressbar"
+   :meter "meter"
+   :dialog "dialog"
+   :hr "separator"
+   :output "status"})
 
 (defn- truthy-attr? [v]
   (or (= true v)
