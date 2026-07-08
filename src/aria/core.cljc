@@ -117,9 +117,31 @@
   (or (get (attrs n) (keyword "style" (name k)))
       (get (attrs n) :style k)))
 
+(defn- decorative-image?
+  "Per HTML-AAM's <img> role-mapping table, an <img alt=\"\"> (alt
+   PRESENT and blank -- the standard \"decorative image\" idiom, e.g. a
+   spacer/divider graphic) computes an implicit role of presentation,
+   not img, and must be excluded from the accessibility tree entirely,
+   same as an explicit role=\"presentation\"/\"none\" node already is.
+   An img with NO alt attribute at all is a separate, unrelated
+   accessibility gap (missing alt text) and must NOT match here -- it
+   still gets the ordinary implicit \"img\" role. An explicit `role`
+   attribute (e.g. an author deliberately overriding with role=\"img\")
+   always wins over this implicit default, matching ARIA precedence --
+   `role` itself already gets this for free (explicit :role is checked
+   first in its own `or`), but `hidden?` calls this predicate directly,
+   so the guard must live here too."
+  [n]
+  (and (= :img (:tag n))
+       (not (contains? (attrs n) :role))
+       (contains? (attrs n) :alt)
+       (str/blank? (str (get (attrs n) :alt)))))
+
 (defn- role
   [n]
   (or (get (attrs n) :role)
+      (when (decorative-image? n)
+        "presentation")
       (when (and (= :a (:tag n))
                  (contains? (attrs n) :href))
         "link")
@@ -175,7 +197,8 @@
       (= "presentation" (get (attrs n) :role))
       (= "none" (get (attrs n) :role))
       (and (= :input (:tag n))
-           (= "hidden" (lower-attr n :type)))))
+           (= "hidden" (lower-attr n :type)))
+      (decorative-image? n)))
 
 (defn- form-control?
   [n]

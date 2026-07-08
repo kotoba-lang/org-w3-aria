@@ -323,6 +323,54 @@
     (is (nil? (find-by-id tree :hidden-span)))
     (is (= "Visible" (:a11y/name tree)))))
 
+;; ---- <img alt=""> is a decorative image -- excluded from the tree ----
+;;
+;; Real bug this guards: implicit-roles unconditionally mapped :img -> "img"
+;; with no check of the `alt` attribute's value at all, so a decorative
+;; image (alt="", the standard idiom for a spacer/divider graphic) was
+;; exposed with role "img" exactly like a real, meaningful image -- a
+;; screen-reader user would hear an empty/meaningless image announced,
+;; which every real browser actively suppresses. Confirmed via direct REPL
+;; reproduction before touching source. Per HTML-AAM's own <img> role-
+;; mapping table, alt="" computes an implicit role of presentation and
+;; must be excluded from the tree, same as an explicit
+;; role="presentation" node already is.
+
+(deftest decorative-image-with-empty-alt-is-excluded-from-the-tree
+  (let [d (doc [(el :page :main {} [:deco :real])
+                (el :deco :img {:alt "" :src "spacer.png"})
+                (el :real :img {:alt "A real photo" :src "photo.png"})]
+               :page)
+        tree (aria/tree d)]
+    (is (nil? (find-by-id tree :deco))
+        "alt=\"\" must compute implicit role presentation and be dropped, not exposed as role img")
+    (is (= "img" (:a11y/role (find-by-id tree :real))))
+    (is (= "A real photo" (:a11y/name (find-by-id tree :real))))))
+
+(deftest image-with-no-alt-attribute-at-all-still-gets-the-ordinary-img-role
+  ;; A MISSING alt attribute is a separate, unrelated accessibility gap
+  ;; (an authoring mistake to flag, not a decorative image) -- it must
+  ;; NOT be treated the same as alt="", or every unlabeled <img> would
+  ;; silently vanish from the tree instead of surfacing as a real problem.
+  (let [d (doc [(el :page :main {} [:no-alt])
+                (el :no-alt :img {:src "mystery.png"})]
+               :page)
+        tree (aria/tree d)]
+    (is (some? (find-by-id tree :no-alt)))
+    (is (= "img" (:a11y/role (find-by-id tree :no-alt))))))
+
+(deftest explicit-role-overrides-the-implicit-decorative-image-default
+  ;; An author explicitly overriding role="img" on an alt="" image (an
+  ;; ARIA-precedence edge case -- unusual but valid) must win over the
+  ;; implicit presentation default, matching this file's own convention
+  ;; everywhere else that an explicit role attribute always wins.
+  (let [d (doc [(el :page :main {} [:override])
+                (el :override :img {:alt "" :role "img" :src "overridden.png"})]
+               :page)
+        tree (aria/tree d)]
+    (is (some? (find-by-id tree :override)))
+    (is (= "img" (:a11y/role (find-by-id tree :override))))))
+
 (deftest form-controls-project-accessibility-state
   (let [d (doc [(el :page :main {} [:field :flag :run :mode :tags])
                 (el :field :input {:placeholder "Name" :value "Kotoba"
