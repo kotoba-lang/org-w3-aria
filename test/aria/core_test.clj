@@ -434,6 +434,35 @@
     (is (= "Kotoba mark" (:a11y/name (find-by-id tree :logo-img))))
     (is (= "Settings" (:a11y/name (find-by-id tree :title-button))))))
 
+;; ---- WAI-ARIA Accessible Name and Description Computation: aria-
+;; labelledby (step 2A) must win over aria-label (step 2C) when an
+;; element carries both -- name-for previously checked aria-label FIRST,
+;; backwards from the spec. Confirmed via direct REPL reproduction
+;; before touching source. ----
+
+(deftest aria-labelledby-wins-over-aria-label-when-both-are-present
+  (let [d (doc [(el :page :main {} [:btn :lbl])
+                (el :btn :button {:aria-label "Wrong" :aria-labelledby "lbl"})
+                (el :lbl :span {:id "lbl"} [:lbl-txt])
+                (txt :lbl-txt "Correct")]
+               :page)
+        tree (aria/tree d)]
+    (is (= "Correct" (:a11y/name (find-by-id tree :btn))))))
+
+(deftest aria-label-still-used-when-aria-labelledby-is-absent
+  (let [d (doc [(el :page :main {} [:btn])
+                (el :btn :button {:aria-label "OnlyLabel"})]
+               :page)
+        tree (aria/tree d)]
+    (is (= "OnlyLabel" (:a11y/name (find-by-id tree :btn))))))
+
+(deftest aria-label-is-the-fallback-when-aria-labelledby-references-a-missing-id
+  (let [d (doc [(el :page :main {} [:btn])
+                (el :btn :button {:aria-label "Fallback" :aria-labelledby "missing"})]
+               :page)
+        tree (aria/tree d)]
+    (is (= "Fallback" (:a11y/name (find-by-id tree :btn))))))
+
 (deftest focused-node-projects-a11y-focused
   (let [d (doc [(el :page :main {} [:first-input :second-input])
                 (el :first-input :input {:value "a"})

@@ -348,8 +348,19 @@
 
 (defn- name-for
   [document n]
-  (or (get (attrs n) :aria-label)
-      (referenced-name document (get (attrs n) :aria-labelledby))
+  ;; WAI-ARIA's own "Accessible Name and Description Computation" spec
+  ;; orders aria-labelledby (step 2A) BEFORE aria-label (step 2C) -- when
+  ;; an element carries both (a real, reachable authoring shape: a
+  ;; migration from one to the other left both in place, or a component
+  ;; library sets aria-label as a fallback default while a page overrides
+  ;; it via aria-labelledby), the labelledby-referenced text must win.
+  ;; This previously checked aria-label FIRST, backwards from the spec --
+  ;; confirmed via direct REPL reproduction before touching source: a
+  ;; button with both attributes set to different, distinguishable
+  ;; values resolved to the aria-label text instead of the
+  ;; aria-labelledby-referenced one.
+  (or (referenced-name document (get (attrs n) :aria-labelledby))
+      (get (attrs n) :aria-label)
       (associated-label-name document n)
       (get (attrs n) :alt)
       (get (attrs n) :placeholder)
