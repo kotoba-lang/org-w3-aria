@@ -200,6 +200,27 @@
     (is (nil? (find-by-id tree :attr-hidden-el)))
     (is (= "Visible" (:a11y/name (find-by-id tree :visible-button))))))
 
+(deftest bare-hidden-attribute-value-of-empty-string-is-also-skipped
+  ;; Real bug this guards: hidden? previously did a raw (= true ...)
+  ;; check instead of this file's own truthy-attr? helper -- this test
+  ;; document uses "" for :hidden, the REAL value a spec-correct HTML
+  ;; parser produces for a bare `<span hidden>` (Element.getAttribute()
+  ;; must return "" for a bare boolean attribute, not the string
+  ;; "true"), unlike the sibling test above which used the Clojure
+  ;; boolean `true` directly and so never exercised this gap. Confirmed
+  ;; via a real downstream test failure (kotoba-lang/browser's own
+  ;; accessibility-tree-skips-hidden-and-presentation-nodes) before
+  ;; fixing.
+  (let [d (doc [(el :page :main {} [:visible-span :hidden-span])
+                (el :visible-span :span {} [:visible-txt])
+                (txt :visible-txt "Visible")
+                (el :hidden-span :span {:hidden ""} [:hidden-txt])
+                (txt :hidden-txt "Hidden")]
+               :page)
+        tree (aria/tree d)]
+    (is (nil? (find-by-id tree :hidden-span)))
+    (is (= "Visible" (:a11y/name tree)))))
+
 (deftest form-controls-project-accessibility-state
   (let [d (doc [(el :page :main {} [:field :flag :run :mode :tags])
                 (el :field :input {:placeholder "Name" :value "Kotoba"

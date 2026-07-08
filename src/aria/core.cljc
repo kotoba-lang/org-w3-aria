@@ -124,7 +124,24 @@
 
 (defn- hidden?
   [n]
-  (or (= true (get (attrs n) :hidden))
+  ;; :hidden used a raw (= true ...) check instead of this file's own
+  ;; truthy-attr? helper (used consistently everywhere else, e.g.
+  ;; :disabled/:readonly/:required/:checked/:selected below) -- this was
+  ;; only "accidentally correct" while kotoba-lang/htmldom's parser
+  ;; happened to store a bare/valueless attribute (`<span hidden>`) as
+  ;; the literal Clojure boolean `true`. Once that parser was fixed to
+  ;; emit the spec-mandated "" instead (Element.getAttribute() must
+  ;; return "" for a bare boolean attribute, not the string "true"), this
+  ;; raw check silently stopped matching the bare form at all -- a real,
+  ;; genuine regression surfaced by that fix, not caused by it: this
+  ;; function was always ONE step away from being wrong (any consumer
+  ;; that legitimately produces "" for :hidden, e.g. a script explicitly
+  ;; setting `el.hidden = true` then a later `el.setAttribute('hidden',
+  ;; '')`, would have hit the identical gap even before that parser fix).
+  ;; Confirmed via a real downstream test failure (browser's own
+  ;; accessibility-tree-skips-hidden-and-presentation-nodes) before
+  ;; fixing.
+  (or (truthy-attr? (get (attrs n) :hidden))
       (= "true" (get (attrs n) :aria-hidden))
       (= "none" (str/lower-case (str (style n :display))))
       (= "presentation" (get (attrs n) :role))
