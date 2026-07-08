@@ -42,6 +42,8 @@
    :tr "row"
    :td "cell"
    :select "combobox"
+   :option "option"
+   :optgroup "group"
    :textarea "textbox"})
 
 (defn- truthy-attr? [v]
@@ -51,6 +53,27 @@
       (and (string? v)
            (not (str/blank? v))
            (not= "false" (str/lower-case v)))))
+
+(defn- parse-size
+  [v]
+  (cond
+    (integer? v) v
+    (string? v) #?(:clj (try (Long/parseLong (str/trim v))
+                             (catch Exception _ nil))
+                   :cljs (let [n (js/parseInt (str/trim v) 10)]
+                           (when-not (js/isNaN n) n)))
+    :else nil))
+
+(defn- listbox-select?
+  "Per HTML-AAM's <select> role-mapping table, the implicit role is
+   \"listbox\" -- not the default \"combobox\" -- whenever EITHER the
+   `multiple` attribute is present OR `size` is a real integer > 1
+   (a common native multi-row picker shape, e.g. <select size=\"4\">,
+   that needs no `multiple` attribute at all). Previously only `multiple`
+   was ever checked here."
+  [n-attrs]
+  (or (truthy-attr? (get n-attrs :multiple))
+      (some-> (get n-attrs :size) parse-size (> 1))))
 
 (defn- node
   [document id]
@@ -436,7 +459,7 @@
       (let [children (keep #(accessible-node document %) (:children n))]
         (cond-> {:a11y/id id
                  :a11y/role (if (and (= :select (:tag n))
-                                      (truthy-attr? (get (attrs n) :multiple)))
+                                      (listbox-select? (attrs n)))
                                "listbox"
                                (role n))
                  :a11y/name (name-for document n)}
@@ -450,7 +473,7 @@
                                    :a11y/required (required-state n)
                                    :a11y/invalid (invalid-state n))
           (and (= :select (:tag n))
-               (truthy-attr? (get (attrs n) :multiple)))
+               (listbox-select? (attrs n)))
           (assoc :a11y/values (select-values document id))
           (and (not (form-control? n))
                (contains? (attrs n) :aria-readonly))

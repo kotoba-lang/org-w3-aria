@@ -135,6 +135,46 @@
     (is (= "combobox" (:a11y/role (find-by-id tree :select-el))))
     (is (= "textbox" (:a11y/role (find-by-id tree :textarea-el))))))
 
+;; ---- <option>/<optgroup> implicit roles, and <select size=N> (N>1, no
+;; `multiple`) mapping to "listbox" per HTML-AAM -- previously <option>/
+;; <optgroup> weren't in implicit-roles at all (fell through to "generic"),
+;; and only `multiple` was ever checked for the listbox override, so a
+;; common native multi-row picker (<select size="4">, no multiple needed)
+;; was exposed as a "combobox" whose visible rows all reported role
+;; "generic" -- a materially broken accessibility tree, not cosmetic.
+;; Confirmed via direct REPL reproduction before touching source. ----
+
+(deftest option-and-optgroup-have-their-own-implicit-roles
+  (let [d (doc [(el :page :main {} [:select-el])
+                (el :select-el :select {} [:group-el])
+                (el :group-el :optgroup {} [:opt-el])
+                (el :opt-el :option {:value "a"})]
+               :page)
+        tree (aria/tree d)]
+    (is (= "group" (:a11y/role (find-by-id tree :group-el))))
+    (is (= "option" (:a11y/role (find-by-id tree :opt-el))))))
+
+(deftest select-size-greater-than-one-maps-to-listbox-without-multiple
+  (let [d (doc [(el :page :main {} [:select-el])
+                (el :select-el :select {:size "4"} [:opt-el])
+                (el :opt-el :option {:value "a" :selected "selected"})]
+               :page)
+        tree (aria/tree d)
+        select (find-by-id tree :select-el)]
+    (is (= "listbox" (:a11y/role select)))
+    (is (= ["a"] (:a11y/values select)))))
+
+(deftest select-size-of-one-or-absent-stays-combobox
+  (let [d (doc [(el :page :main {} [:size-one :size-absent])
+                (el :size-one :select {:size "1"} [:o1])
+                (el :o1 :option {:value "a"})
+                (el :size-absent :select {} [:o2])
+                (el :o2 :option {:value "b"})]
+               :page)
+        tree (aria/tree d)]
+    (is (= "combobox" (:a11y/role (find-by-id tree :size-one))))
+    (is (= "combobox" (:a11y/role (find-by-id tree :size-absent))))))
+
 (deftest input-type-derived-roles-and-values
   (let [d (doc [(el :page :main {} [:checkbox-input :radio-input :submit-input
                                      :range-input :search-input :number-input
