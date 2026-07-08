@@ -109,7 +109,36 @@
     (is (= "heading" (:a11y/role (find-by-id tree :h1-el))))
     (is (= 1 (:a11y/level (find-by-id tree :h1-el))))
     (is (= 2 (:a11y/level (find-by-id tree :h2-el))))
-    (is (nil? (:a11y/level (find-by-id tree :h3-el))))))
+    (is (= 3 (:a11y/level (find-by-id tree :h3-el))))))
+
+;; ---- implicit aria-level for <h3>-<h6> -- previously only :h1/:h2 were
+;; handled by the case in accessible-node, so h3-h6 (which DO map to role
+;; "heading" via implicit-roles) fell through to nil instead of the
+;; HTML-AAM-mandated 3-6, breaking level-based heading navigation (a
+;; common real screen-reader feature) for the 4 most commonly nested
+;; heading tags. Confirmed via direct REPL reproduction before touching
+;; source. ----
+
+(deftest implicit-heading-level-covers-h3-through-h6
+  (let [d (doc [(el :page :main {} [:h3-el :h4-el :h5-el :h6-el])
+                (el :h3-el :h3 {} [:h3-txt]) (txt :h3-txt "Three")
+                (el :h4-el :h4 {} [:h4-txt]) (txt :h4-txt "Four")
+                (el :h5-el :h5 {} [:h5-txt]) (txt :h5-txt "Five")
+                (el :h6-el :h6 {} [:h6-txt]) (txt :h6-txt "Six")]
+               :page)
+        tree (aria/tree d)]
+    (is (= 3 (:a11y/level (find-by-id tree :h3-el))))
+    (is (= 4 (:a11y/level (find-by-id tree :h4-el))))
+    (is (= 5 (:a11y/level (find-by-id tree :h5-el))))
+    (is (= 6 (:a11y/level (find-by-id tree :h6-el))))))
+
+(deftest explicit-aria-level-still-overrides-the-implicit-heading-level
+  (let [d (doc [(el :page :main {} [:h3-el])
+                (el :h3-el :h3 {:aria-level "9"} [:h3-txt])
+                (txt :h3-txt "Three")]
+               :page)
+        tree (aria/tree d)]
+    (is (= "9" (:a11y/level (find-by-id tree :h3-el))))))
 
 (deftest table-structure-and-form-element-implicit-roles
   (let [d (doc [(el :page :main {} [:table-el :select-el :textarea-el])

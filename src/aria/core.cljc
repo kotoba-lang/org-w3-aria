@@ -512,7 +512,9 @@
           (contains? (attrs n) :scroll-left) (assoc :a11y/scroll-left (get (attrs n) :scroll-left))
           (and (= "heading" (role n))
                (not (contains? (attrs n) :aria-level)))
-          (assoc :a11y/level (case (:tag n) :h1 1 :h2 2 nil)))))))
+          (assoc :a11y/level (case (:tag n)
+                               :h1 1 :h2 2 :h3 3 :h4 4 :h5 5 :h6 6
+                               nil)))))))
 
 (defn tree
   [document]
