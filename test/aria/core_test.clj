@@ -684,6 +684,60 @@
     (is (= "step" (:a11y/current step)))
     (is (= true (:a11y/selected option)))))
 
+;; ---- aria-owns/aria-activedescendant are IDREF-typed exactly like
+;; aria-controls/aria-describedby, but were previously entirely absent
+;; from this file (not even naively projected as a raw string), unlike
+;; every other IDREF-typed property. aria-activedescendant in
+;; particular is the ONLY signal for which option is "virtually
+;; focused" in the extremely common combobox/listbox pattern, since
+;; real DOM focus stays on the combobox's own <input> the whole time --
+;; its absence broke that pattern's core mechanism entirely. Confirmed
+;; via direct REPL reproduction before touching source. ----
+
+(deftest aria-owns-and-activedescendant-resolve-to-referenced-nodes
+  (let [d (doc [(el :page :main {} [:combobox :listbox])
+                (el :combobox :input {:role "combobox" :aria-expanded "true"
+                                       :aria-controls "listbox-dom"
+                                       :aria-activedescendant "opt-2-dom"})
+                (el :listbox :ul {:id "listbox-dom" :role "listbox"} [:opt-1 :opt-2])
+                (el :opt-1 :li {:id "opt-1-dom" :role "option"} [:opt-1-txt])
+                (txt :opt-1-txt "Apple")
+                (el :opt-2 :li {:id "opt-2-dom" :role "option" :aria-selected "true"} [:opt-2-txt])
+                (txt :opt-2-txt "Banana")]
+               :page)
+        tree (aria/tree d)
+        combobox (find-by-id tree :combobox)
+        opt-2 (find-by-id tree :opt-2)]
+    (is (= :opt-2 (:a11y/active-descendant combobox))
+        "aria-activedescendant resolves to the referenced option's own node id")
+    (is (= (:a11y/id opt-2) (:a11y/active-descendant combobox))))
+
+  (let [d (doc [(el :page :main {} [:tree :n1 :n2])
+                (el :tree :div {:role "tree" :aria-owns "n1-dom n2-dom"} [])
+                (el :n1 :div {:id "n1-dom" :role "treeitem"} [])
+                (el :n2 :div {:id "n2-dom" :role "treeitem"} [])]
+               :page)
+        tree-node (find-by-id (aria/tree d) :tree)]
+    (is (= [:n1 :n2] (:a11y/owns tree-node))
+        "aria-owns resolves an IDREF list to a vector of the referenced nodes' own ids, same shape as aria-controls"))
+
+  (let [d (doc [(el :page :main {} [:combobox])
+                (el :combobox :input {:aria-activedescendant "nonexistent"})]
+               :page)
+        combobox (find-by-id (aria/tree d) :combobox)]
+    (is (contains? combobox :a11y/active-descendant)
+        "the key is still projected even when the reference is dangling")
+    (is (nil? (:a11y/active-descendant combobox))
+        "a dangling aria-activedescendant reference resolves to nil, not a crash or the literal id string"))
+
+  (let [d (doc [(el :page :main {} [:plain])
+                (el :plain :div {} [])]
+               :page)
+        plain (find-by-id (aria/tree d) :plain)]
+    (is (not (contains? plain :a11y/active-descendant))
+        "no aria-activedescendant attribute at all -- the key must be absent, not present-and-nil")
+    (is (not (contains? plain :a11y/owns)))))
+
 (deftest aria-structure-and-range-project-accessibility-state
   (let [d (doc [(el :page :main {} [:heading :item :grid :slider])
                 (el :heading :div {:role "heading" :aria-level "3"} [:heading-txt])

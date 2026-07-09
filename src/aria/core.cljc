@@ -620,6 +620,21 @@
                                                           (referenced-name document (get (attrs n) :aria-describedby)))
           (contains? (attrs n) :aria-controls) (assoc :a11y/controls
                                                        (referenced-ids document (get (attrs n) :aria-controls)))
+          ;; aria-owns/aria-activedescendant are IDREF-typed exactly like
+          ;; aria-controls/aria-describedby above -- per WAI-ARIA they
+          ;; must resolve to the referenced element(s), not be copied as
+          ;; a literal string. Previously absent entirely (not even
+          ;; naively as a raw string), unlike every other IDREF-typed
+          ;; property in this file. aria-activedescendant in particular
+          ;; is the ONLY signal for which option is "virtually focused"
+          ;; in the extremely common combobox/listbox pattern (real DOM
+          ;; focus stays on the combobox's own <input> the whole time),
+          ;; so its absence broke that pattern's core mechanism entirely.
+          (contains? (attrs n) :aria-owns) (assoc :a11y/owns
+                                                   (referenced-ids document (get (attrs n) :aria-owns)))
+          (contains? (attrs n) :aria-activedescendant)
+          (assoc :a11y/active-descendant
+                 (node-by-dom-id document (get (attrs n) :aria-activedescendant)))
           (contains? (attrs n) :aria-expanded) (assoc :a11y/expanded (aria-state (get (attrs n) :aria-expanded)))
           (contains? (attrs n) :aria-pressed) (assoc :a11y/pressed (aria-state (get (attrs n) :aria-pressed)))
           (or (contains? (attrs n) :aria-selected)
