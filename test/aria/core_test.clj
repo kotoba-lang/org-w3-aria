@@ -766,6 +766,35 @@
     (is (= "Forty" (:a11y/valuetext (find-by-id tree :slider))))
     (is (= "vertical" (:a11y/orientation (find-by-id tree :slider))))))
 
+;; ---- an indeterminate checkbox computes an accessible checked state of
+;; "mixed" -- .indeterminate is an IDL-only property (no HTML content-
+;; attribute reflection) that a script sets directly, the canonical
+;; real-world use being a "select-all" checkbox representing a partial
+;; selection. checked-state previously never considered it at all, so
+;; it silently reported plain false/true (whatever the checked attr
+;; happened to say) instead of mixed -- a real WRONG state, not merely
+;; a missing one. An explicit aria-checked still wins over it, matching
+;; ARIA's existing author-override precedence. Confirmed via direct
+;; REPL reproduction before touching source. ----
+
+(deftest indeterminate-checkbox-computes-mixed-checked-state
+  (let [d (doc [(el :page :main {} [:indeterminate-cb :overridden-cb
+                                     :plain-checked-cb :not-indeterminate-cb])
+                (el :indeterminate-cb :input {:type "checkbox" :indeterminate "true"})
+                (el :overridden-cb :input {:type "checkbox" :indeterminate "true"
+                                            :aria-checked "true"})
+                (el :plain-checked-cb :input {:type "checkbox" :checked "true"})
+                (el :not-indeterminate-cb :input {:type "checkbox" :indeterminate "false"})]
+               :page)
+        tree (aria/tree d)]
+    (is (= "mixed" (:a11y/checked (find-by-id tree :indeterminate-cb))))
+    (is (= true (:a11y/checked (find-by-id tree :overridden-cb)))
+        "an explicit aria-checked always wins over the native indeterminate signal")
+    (is (= true (:a11y/checked (find-by-id tree :plain-checked-cb)))
+        "sanity check: plain checked, unaffected by this fix")
+    (is (= false (:a11y/checked (find-by-id tree :not-indeterminate-cb)))
+        "indeterminate=\"false\" falls through to the ordinary checked computation")))
+
 (deftest aria-live-region-projects-accessibility-state
   (let [d (doc [(el :page :main {} [:status])
                 (el :status :section {:role "status" :aria-live "polite" :aria-busy "true"

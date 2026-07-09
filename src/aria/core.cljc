@@ -400,10 +400,22 @@
     (when (some? v) (str v))))
 
 (defn- checked-state
+  "Per HTML-AAM/core-AAM, a checkbox's `.indeterminate` IDL property (no
+   HTML content-attribute reflection -- author-set only via a script,
+   e.g. the canonical `select-all` partial-selection pattern) computes
+   an accessible checked state of \"mixed\", same as the manual
+   aria-checked=\"mixed\" case this function already handled. Previously
+   entirely unconsidered here, so an indeterminate checkbox silently
+   reported plain false/true (whatever its own checked attr happened to
+   say) instead of mixed -- a real, WRONG state, not merely a missing
+   one. An explicit aria-checked always wins over the native
+   indeterminate signal, matching ARIA's own author-override precedence
+   (unchanged from before this fix)."
   [n]
-  (if (contains? (attrs n) :aria-checked)
-    (aria-state (get (attrs n) :aria-checked))
-    (truthy-attr? (get (attrs n) :checked))))
+  (cond
+    (contains? (attrs n) :aria-checked) (aria-state (get (attrs n) :aria-checked))
+    (truthy-attr? (get (attrs n) :indeterminate)) "mixed"
+    :else (truthy-attr? (get (attrs n) :checked))))
 
 (def aria-attribute-projection
   {:aria-level :a11y/level
