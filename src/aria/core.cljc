@@ -96,6 +96,8 @@
 
 (declare aria-state)
 
+(declare option-disabled?)
+
 (defn- text-content
   [document id]
   (let [n (node document id)]
@@ -266,6 +268,20 @@
   [document n]
   (boolean
    (or (disabled-control? document n)
+       ;; :option/:optgroup are not "disabled-capable-control?" (that set
+       ;; is :button/:input/:select/:textarea), so disabled-control? above
+       ;; never fires for them. option-disabled? already correctly
+       ;; computes an option's real disabled state -- its own disabled
+       ;; attr OR inherited from an ancestor <optgroup disabled> -- but
+       ;; was previously consulted ONLY inside selected-option-ids (to
+       ;; exclude disabled options from selection), never here, so this
+       ;; accessible-node's :a11y/disabled key was silently never emitted
+       ;; for an <option>/<optgroup> at all, even an explicitly disabled
+       ;; one (unless it also carried an explicit aria-disabled attr).
+       (case (:tag n)
+         :option (option-disabled? document (:node/id n))
+         :optgroup (truthy-attr? (get (attrs n) :disabled))
+         false)
        (true? (aria-state (get (attrs n) :aria-disabled))))))
 
 (defn- readonly-state
@@ -513,6 +529,7 @@
           (seq children) (assoc :a11y/children (vec children))
           (= id (:focus document)) (assoc :a11y/focused true)
           (or (disabled-capable-control? n)
+              (contains? #{:option :optgroup} (:tag n))
               (contains? (attrs n) :aria-disabled))
           (assoc :a11y/disabled (disabled-state document n))
           (form-control? n) (assoc :a11y/value (form-value document n)

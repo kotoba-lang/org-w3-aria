@@ -431,7 +431,47 @@
     (is (= true (:a11y/selected tag-one)))
     (is (= true (:a11y/selected tag-two)))
     (is (= true (:a11y/selected tag-locked)))
-    (is (= false (:a11y/selected tag-three)))))
+    (is (= false (:a11y/selected tag-three)))
+    ;; tag-locked sits inside tag-locked-group, an <optgroup disabled> --
+    ;; previously :a11y/disabled was silently absent from EVERY option's
+    ;; accessible node (not just false), since :option/:optgroup were not
+    ;; in disabled-capable-control?'s set at all.
+    (is (= true (:a11y/disabled tag-locked))
+        "an option inside a disabled <optgroup> must report :a11y/disabled true")
+    (is (= false (:a11y/disabled tag-one)))
+    (is (= false (:a11y/disabled tag-two)))
+    (is (= false (:a11y/disabled tag-three)))))
+
+(deftest disabled-option-and-optgroup-project-accessibility-state
+  ;; option-disabled? (own disabled attr OR inherited from an ancestor
+  ;; <optgroup disabled>) already existed and was already correct --
+  ;; used ONLY inside selected-option-ids to exclude disabled options
+  ;; from default/multi selection, never consulted when building the
+  ;; option's own accessible-node map. This is the plain-option
+  ;; (no optgroup involved) half of the fix, plus the optgroup node's
+  ;; own :a11y/disabled.
+  (let [d (doc [(el :page :main {} [:sel])
+                (el :sel :select {} [:opt-plain :opt-disabled :group])
+                (el :opt-plain :option {:value "plain"} [:opt-plain-txt])
+                (txt :opt-plain-txt "Plain")
+                (el :opt-disabled :option {:value "gone" :disabled true} [:opt-disabled-txt])
+                (txt :opt-disabled-txt "Gone")
+                (el :group :optgroup {:label "Group" :disabled true} [:opt-in-group])
+                (el :opt-in-group :option {:value "ingroup"} [:opt-in-group-txt])
+                (txt :opt-in-group-txt "InGroup")]
+               :page)
+        tree (aria/tree d)
+        opt-plain (find-by-id tree :opt-plain)
+        opt-disabled (find-by-id tree :opt-disabled)
+        group (find-by-id tree :group)
+        opt-in-group (find-by-id tree :opt-in-group)]
+    (is (= false (:a11y/disabled opt-plain)))
+    (is (= true (:a11y/disabled opt-disabled))
+        "an option's own disabled attribute must project :a11y/disabled true")
+    (is (= true (:a11y/disabled group))
+        "the <optgroup> element itself must also project its own :a11y/disabled")
+    (is (= true (:a11y/disabled opt-in-group))
+        "an option with no disabled attr of its own must still inherit :a11y/disabled true from a disabled ancestor <optgroup>")))
 
 (deftest disabled-fieldset-projects-accessibility-state
   (let [d (doc [(el :page :main {} [:fieldset-el])
