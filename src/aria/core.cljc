@@ -98,6 +98,8 @@
 
 (declare option-disabled?)
 
+(declare sectioning-content-ancestor?)
+
 (defn- text-content
   [document id]
   (let [n (node document id)]
@@ -140,7 +142,7 @@
        (str/blank? (str (get (attrs n) :alt)))))
 
 (defn- role
-  [n]
+  [document n]
   (or (get (attrs n) :role)
       (when (decorative-image? n)
         "presentation")
@@ -171,6 +173,18 @@
         (if (= "row" (lower-attr n :scope))
           "rowheader"
           "columnheader"))
+      ;; Per HTML-AAM's <header>/<footer> role-mapping table, the implicit
+      ;; landmark roles banner/contentinfo apply ONLY when scoped to the
+      ;; body -- i.e. NOT a descendant of article/aside/main/nav/section.
+      ;; Previously implicit-roles mapped :header/:footer unconditionally,
+      ;; so a real, common shape like <article><header>...</header>
+      ;; </article> wrongly duplicated the page's own real banner landmark
+      ;; inside the article, breaking landmark-based screen-reader
+      ;; navigation. A top-level <header>/<footer> (the common case) is
+      ;; genuinely unaffected -- this only excludes the nested case.
+      (when (and (contains? #{:header :footer} (:tag n))
+                 (sectioning-content-ancestor? document n))
+        "generic")
       (get implicit-roles (:tag n))
       "generic"))
 
@@ -254,6 +268,21 @@
                    (truthy-attr? (get (attrs parent) :disabled))
                    (not (when-let [legend-id (first-legend-child-id document parent-id)]
                           (descendant-or-self? document legend-id (:node/id n)))))
+            true
+            (recur (get parents parent-id))))))))
+
+(defn- sectioning-content-ancestor?
+  "Per HTML-AAM: a <header>/<footer>'s implicit landmark role
+   (banner/contentinfo) only applies when it is scoped to the body --
+   i.e. NOT a descendant of article/aside/main/nav/section. Mirrors
+   disabled-by-fieldset?'s own ancestor-walking pattern exactly, just
+   against a different tag set and with no legend-style carve-out."
+  [document n]
+  (let [parents (parent-index document)]
+    (loop [parent-id (get parents (:node/id n))]
+      (when parent-id
+        (let [parent (node document parent-id)]
+          (if (contains? #{:article :aside :main :nav :section} (:tag parent))
             true
             (recur (get parents parent-id))))))))
 
@@ -524,7 +553,7 @@
                  :a11y/role (if (and (= :select (:tag n))
                                       (listbox-select? (attrs n)))
                                "listbox"
-                               (role n))
+                               (role document n))
                  :a11y/name (name-for document n)}
           (seq children) (assoc :a11y/children (vec children))
           (= id (:focus document)) (assoc :a11y/focused true)
@@ -563,7 +592,7 @@
                                   (aria-state (get (attrs n) :aria-selected))
                                   (truthy-attr? (get (attrs n) :selected))))
           (contains? (attrs n) :aria-current) (assoc :a11y/current (aria-state (get (attrs n) :aria-current)))
-          (or (contains? #{"checkbox" "radio"} (role n))
+          (or (contains? #{"checkbox" "radio"} (role document n))
               (contains? (attrs n) :aria-checked))
           (assoc :a11y/checked (checked-state n))
           true (project-aria-attributes n)
@@ -574,7 +603,7 @@
           (contains? (attrs n) :overflow) (assoc :a11y/overflow (get (attrs n) :overflow))
           (contains? (attrs n) :scroll-top) (assoc :a11y/scroll-top (get (attrs n) :scroll-top))
           (contains? (attrs n) :scroll-left) (assoc :a11y/scroll-left (get (attrs n) :scroll-left))
-          (and (= "heading" (role n))
+          (and (= "heading" (role document n))
                (not (contains? (attrs n) :aria-level)))
           (assoc :a11y/level (case (:tag n)
                                :h1 1 :h2 2 :h3 3 :h4 4 :h5 5 :h6 6

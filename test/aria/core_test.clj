@@ -99,8 +99,14 @@
     (is (= "caption" (:a11y/role (find-by-id tree :figcaption-el))))
     (is (= "list" (:a11y/role (find-by-id tree :ul-el))))
     (is (= "listitem" (:a11y/role (find-by-id tree :li-el))))
-    (is (= "banner" (:a11y/role (find-by-id tree :header-el))))
-    (is (= "contentinfo" (:a11y/role (find-by-id tree :footer-el))))
+    ;; :header-el/:footer-el are direct children of :page, which is
+    ;; itself tagged :main -- and :main is one of the real HTML-AAM
+    ;; sectioning-content ancestors that suppresses the banner/
+    ;; contentinfo landmark role (see header-footer-role-depends-on-
+    ;; sectioning-ancestor below for the genuinely top-level, still-
+    ;; banner/contentinfo case, and the full excluding-ancestor set).
+    (is (= "generic" (:a11y/role (find-by-id tree :header-el))))
+    (is (= "generic" (:a11y/role (find-by-id tree :footer-el))))
     (is (= "navigation" (:a11y/role (find-by-id tree :nav-el))))
     (is (= "region" (:a11y/role (find-by-id tree :section-el))))
     (is (= "article" (:a11y/role (find-by-id tree :article-el))))
@@ -110,6 +116,61 @@
     (is (= 1 (:a11y/level (find-by-id tree :h1-el))))
     (is (= 2 (:a11y/level (find-by-id tree :h2-el))))
     (is (= 3 (:a11y/level (find-by-id tree :h3-el))))))
+
+;; ---- <header>/<footer> banner/contentinfo landmark roles are scoped to
+;; the body -- previously implicit-roles mapped :header/:footer
+;; unconditionally, so a real, common shape like
+;; <article><header>...</header></article> wrongly duplicated the page's
+;; own real banner landmark inside the article, breaking landmark-based
+;; screen-reader navigation. Confirmed via direct REPL reproduction
+;; before touching source. ----
+
+(deftest header-footer-role-depends-on-sectioning-ancestor
+  (let [d (doc [(el :page :div {} [:top-header :top-footer
+                                    :art :aside-wrap :main-wrap :nav-wrap :section-wrap
+                                    :deep-wrap :explicit-header])
+                (el :top-header :header {} [:top-header-txt])
+                (txt :top-header-txt "Site header")
+                (el :top-footer :footer {} [:top-footer-txt])
+                (txt :top-footer-txt "Site footer")
+                (el :art :article {} [:art-header])
+                (el :art-header :header {} [:art-header-txt])
+                (txt :art-header-txt "Article header")
+                (el :aside-wrap :aside {} [:aside-footer])
+                (el :aside-footer :footer {} [:aside-footer-txt])
+                (txt :aside-footer-txt "Aside footer")
+                (el :main-wrap :main {} [:main-header])
+                (el :main-header :header {} [:main-header-txt])
+                (txt :main-header-txt "Main header")
+                (el :nav-wrap :nav {} [:nav-header])
+                (el :nav-header :header {} [:nav-header-txt])
+                (txt :nav-header-txt "Nav header")
+                (el :section-wrap :section {} [:section-header])
+                (el :section-header :header {} [:section-header-txt])
+                (txt :section-header-txt "Section header")
+                ;; A non-sectioning intermediate ancestor (:div) must not
+                ;; interrupt the walk up to the real :section ancestor.
+                (el :deep-wrap :section {} [:deep-div])
+                (el :deep-div :div {} [:deep-header])
+                (el :deep-header :header {} [:deep-header-txt])
+                (txt :deep-header-txt "Deeply nested header")
+                (el :explicit-header :article {} [:explicit-header-inner])
+                (el :explicit-header-inner :header {:role "banner"} [:explicit-header-txt])
+                (txt :explicit-header-txt "Explicit override")]
+               :page)
+        tree (aria/tree d)]
+    (is (= "banner" (:a11y/role (find-by-id tree :top-header)))
+        "a genuinely top-level header (no sectioning-content ancestor) must keep the banner role")
+    (is (= "contentinfo" (:a11y/role (find-by-id tree :top-footer))))
+    (is (= "generic" (:a11y/role (find-by-id tree :art-header))) "descendant of <article>")
+    (is (= "generic" (:a11y/role (find-by-id tree :aside-footer))) "descendant of <aside>")
+    (is (= "generic" (:a11y/role (find-by-id tree :main-header))) "descendant of <main>")
+    (is (= "generic" (:a11y/role (find-by-id tree :nav-header))) "descendant of <nav>")
+    (is (= "generic" (:a11y/role (find-by-id tree :section-header))) "descendant of <section>")
+    (is (= "generic" (:a11y/role (find-by-id tree :deep-header)))
+        "a non-sectioning intermediate ancestor (<div>) must not interrupt the walk up to the real <section> ancestor")
+    (is (= "banner" (:a11y/role (find-by-id tree :explicit-header-inner)))
+        "an explicit role= attribute always wins over the implicit landmark-scoping computation")))
 
 ;; ---- implicit aria-level for <h3>-<h6> -- previously only :h1/:h2 were
 ;; handled by the case in accessible-node, so h3-h6 (which DO map to role
