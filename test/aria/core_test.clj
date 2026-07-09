@@ -108,10 +108,16 @@
     (is (= "generic" (:a11y/role (find-by-id tree :header-el))))
     (is (= "generic" (:a11y/role (find-by-id tree :footer-el))))
     (is (= "navigation" (:a11y/role (find-by-id tree :nav-el))))
-    (is (= "region" (:a11y/role (find-by-id tree :section-el))))
+    ;; :section-el/:form-el are bare, unnamed elements -- per HTML-AAM,
+    ;; region/form only apply when the element has an accessible name
+    ;; (see section-form-role-depends-on-accessible-name below for the
+    ;; named case). A bare <section>/<form> now correctly computes
+    ;; "generic", matching the far more common real-world authoring
+    ;; pattern of using them purely for visual/structural grouping.
+    (is (= "generic" (:a11y/role (find-by-id tree :section-el))))
     (is (= "article" (:a11y/role (find-by-id tree :article-el))))
     (is (= "complementary" (:a11y/role (find-by-id tree :aside-el))))
-    (is (= "form" (:a11y/role (find-by-id tree :form-el))))
+    (is (= "generic" (:a11y/role (find-by-id tree :form-el))))
     (is (= "heading" (:a11y/role (find-by-id tree :h1-el))))
     (is (= 1 (:a11y/level (find-by-id tree :h1-el))))
     (is (= 2 (:a11y/level (find-by-id tree :h2-el))))
@@ -171,6 +177,54 @@
         "a non-sectioning intermediate ancestor (<div>) must not interrupt the walk up to the real <section> ancestor")
     (is (= "banner" (:a11y/role (find-by-id tree :explicit-header-inner)))
         "an explicit role= attribute always wins over the implicit landmark-scoping computation")))
+
+;; ---- <section>/<form> region/form landmark roles require an accessible
+;; name -- previously implicit-roles mapped :section/:form
+;; unconditionally, so a real, extremely common shape like
+;; <section class="card">...</section> used purely for visual grouping
+;; (no aria-label at all) wrongly became a landmark, flooding real
+;; screen-reader landmark navigation with unnamed, indistinguishable
+;; "region"/"form" entries. The accessible-name check is deliberately
+;; narrow (aria-labelledby/aria-label only, not the broader name-for
+;; fallback chain that ends in raw text content) -- see
+;; landmark-accessible-name's own docstring for why. Confirmed via
+;; direct REPL reproduction before touching source. ----
+
+(deftest section-form-role-depends-on-accessible-name
+  (let [d (doc [(el :page :div {} [:labelled-sec :labelledby-sec :sec-h
+                                    :bare-sec :textful-sec :dangling-sec
+                                    :labelled-form :bare-form
+                                    :explicit-sec])
+                (el :labelled-sec :section {:aria-label "Related links"})
+                (el :labelledby-sec :section {:aria-labelledby "sec-h"})
+                (el :sec-h :h2 {:id "sec-h"} [:sec-h-txt])
+                (txt :sec-h-txt "Newsletter")
+                (el :bare-sec :section)
+                (el :textful-sec :section {} [:textful-sec-txt])
+                (txt :textful-sec-txt "Just some ordinary paragraph text, no label at all.")
+                (el :dangling-sec :section {:aria-labelledby "nonexistent"})
+                (el :labelled-form :form {:aria-label "Search"})
+                (el :bare-form :form)
+                (el :explicit-sec :section {:role "region"} [:explicit-sec-txt])
+                (txt :explicit-sec-txt "No name, but an explicit role always wins.")]
+               :page)
+        tree (aria/tree d)]
+    (is (= "region" (:a11y/role (find-by-id tree :labelled-sec)))
+        "aria-label alone is a sufficient accessible name for region")
+    (is (= "region" (:a11y/role (find-by-id tree :labelledby-sec)))
+        "aria-labelledby referencing real text is a sufficient accessible name for region")
+    (is (= "generic" (:a11y/role (find-by-id tree :bare-sec)))
+        "no aria-label/aria-labelledby at all -- must not become a landmark")
+    (is (= "generic" (:a11y/role (find-by-id tree :textful-sec)))
+        "ordinary body text alone is NOT an accessible name here -- landmark-accessible-name deliberately does not fall back to text content like name-for does")
+    (is (= "generic" (:a11y/role (find-by-id tree :dangling-sec)))
+        "aria-labelledby referencing a nonexistent id resolves to no name")
+    (is (= "form" (:a11y/role (find-by-id tree :labelled-form)))
+        "aria-label alone is a sufficient accessible name for form")
+    (is (= "generic" (:a11y/role (find-by-id tree :bare-form)))
+        "no aria-label/aria-labelledby at all -- must not become a landmark")
+    (is (= "region" (:a11y/role (find-by-id tree :explicit-sec)))
+        "an explicit role= attribute always wins over the implicit accessible-name computation")))
 
 ;; ---- implicit aria-level for <h3>-<h6> -- previously only :h1/:h2 were
 ;; handled by the case in accessible-node, so h3-h6 (which DO map to role
@@ -747,7 +801,11 @@
                :page)
         tree (aria/tree d)
         pane (find-by-id tree :pane)]
-    (is (= "region" (:a11y/role pane)))
+    ;; overflow/scroll-top/scroll-left projection applies to any node
+    ;; regardless of role -- :pane is an unnamed <section> so it now
+    ;; correctly computes "generic" (see
+    ;; section-form-role-depends-on-accessible-name), not "region".
+    (is (= "generic" (:a11y/role pane)))
     (is (= "auto" (:a11y/overflow pane)))
     (is (= "24" (:a11y/scroll-top pane)))
     (is (= "3" (:a11y/scroll-left pane)))))

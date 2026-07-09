@@ -100,6 +100,8 @@
 
 (declare sectioning-content-ancestor?)
 
+(declare referenced-name)
+
 (defn- text-content
   [document id]
   (let [n (node document id)]
@@ -140,6 +142,23 @@
        (not (contains? (attrs n) :role))
        (contains? (attrs n) :alt)
        (str/blank? (str (get (attrs n) :alt)))))
+
+(defn- landmark-accessible-name
+  "The narrow \"accessible name\" HTML-AAM's role-mapping table requires
+   for <section>/<form> to be promoted to a landmark (region/form) --
+   deliberately ONLY aria-labelledby/aria-label, NOT `name-for`'s full,
+   broader fallback chain (associated <label>, alt, placeholder, title,
+   or generic text content). Reusing the full chain would make the gate
+   nearly useless: most real sections/forms DO contain some visible
+   text, which name-for's last-resort text-content fallback would then
+   treat as a genuine accessible name, defeating the entire point of
+   requiring one -- a section used purely for visual grouping (with
+   ordinary body text, no explicit label) must stay unnamed and
+   therefore generic, exactly the common real-world authoring pattern
+   this fix targets."
+  [document n]
+  (or (referenced-name document (get (attrs n) :aria-labelledby))
+      (get (attrs n) :aria-label)))
 
 (defn- role
   [document n]
@@ -184,6 +203,22 @@
       ;; genuinely unaffected -- this only excludes the nested case.
       (when (and (contains? #{:header :footer} (:tag n))
                  (sectioning-content-ancestor? document n))
+        "generic")
+      ;; Per HTML-AAM's <section>/<form> role-mapping table, the implicit
+      ;; landmark roles region/form apply ONLY when the element has an
+      ;; accessible name -- unlike header/footer's ancestry gate, this is
+      ;; a NAMING precondition, not a position one. implicit-roles
+      ;; previously mapped :section/:form unconditionally, so a real,
+      ;; extremely common shape like <section class=\"card\">...</section>
+      ;; used purely for visual grouping (no aria-label at all) wrongly
+      ;; became a landmark, flooding real screen-reader landmark
+      ;; navigation with unnamed, indistinguishable \"region\"/\"form\"
+      ;; entries. Deliberately does NOT touch :aside/:nav/:main/:article,
+      ;; which are unconditionally landmarks regardless of naming --
+      ;; :section/:form are the two HTML5 elements whose landmark-
+      ;; worthiness genuinely depends on authorial intent.
+      (when (and (contains? #{:section :form} (:tag n))
+                 (nil? (landmark-accessible-name document n)))
         "generic")
       (get implicit-roles (:tag n))
       "generic"))
