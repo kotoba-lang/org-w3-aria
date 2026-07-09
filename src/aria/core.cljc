@@ -484,7 +484,26 @@
   [document id]
   (let [n (node document id)]
     (when (and (element-node? n) (not (hidden? n)))
-      (let [children (keep #(accessible-node document %) (:children n))]
+      (let [children (keep #(accessible-node document %) (:children n))
+            ;; :selection-start/:selection-end were previously copied
+            ;; straight from the node's own attrs with zero validation
+            ;; against the real value's length -- the exact same root-
+            ;; cause bug cssom.layout's own sel-ops already had to guard
+            ;; against (see its own clamp): the JS-facing `value` setter
+            ;; has no spec-mandated selection-reset, so a real, ordinary
+            ;; script sequence (set a longer value, select a range, then
+            ;; set a SHORTER value) leaves stale offsets exceeding the
+            ;; new value's own length. Unlike sel-ops, THIS consumer
+            ;; (accessible-node) was never touched, so the public
+            ;; accessibility-tree API -- what assistive tech and
+            ;; browser-use both read for form-field semantics -- could
+            ;; report an impossible selection range exceeding the
+            ;; reported :a11y/value's own length. Confirmed via direct
+            ;; REPL reproduction before touching source.
+            selectable-length (delay (count (str (form-value document n))))
+            clamp-selection (fn [v]
+                              (when-let [parsed (parse-size v)]
+                                (max 0 (min @selectable-length parsed))))]
         (cond-> {:a11y/id id
                  :a11y/role (if (and (= :select (:tag n))
                                       (listbox-select? (attrs n)))
@@ -532,8 +551,8 @@
           (assoc :a11y/checked (checked-state n))
           true (project-aria-attributes n)
           true (project-aria-state-attributes n)
-          (contains? (attrs n) :selection-start) (assoc :a11y/selection-start (get (attrs n) :selection-start))
-          (contains? (attrs n) :selection-end) (assoc :a11y/selection-end (get (attrs n) :selection-end))
+          (contains? (attrs n) :selection-start) (assoc :a11y/selection-start (clamp-selection (get (attrs n) :selection-start)))
+          (contains? (attrs n) :selection-end) (assoc :a11y/selection-end (clamp-selection (get (attrs n) :selection-end)))
           (seq (str (get (attrs n) :composition ""))) (assoc :a11y/composition (str (get (attrs n) :composition)))
           (contains? (attrs n) :overflow) (assoc :a11y/overflow (get (attrs n) :overflow))
           (contains? (attrs n) :scroll-top) (assoc :a11y/scroll-top (get (attrs n) :scroll-top))

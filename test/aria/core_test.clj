@@ -411,8 +411,9 @@
     (is (= "textbox" (:a11y/role field)))
     (is (= "Name" (:a11y/name field)))
     (is (= "Kotoba" (:a11y/value field)))
-    (is (= "1" (:a11y/selection-start field)))
-    (is (= "4" (:a11y/selection-end field)))
+    (is (= 1 (:a11y/selection-start field))
+        "now a real, clamped integer offset (not the raw attribute string) -- see the stale-selection tests below")
+    (is (= 4 (:a11y/selection-end field)))
     (is (= "to" (:a11y/composition field)))
     (is (= true (:a11y/readonly field)))
     (is (= "checkbox" (:a11y/role flag)))
@@ -667,3 +668,42 @@
                :page)]
     (is (= "button" (:a11y/role (aria/accessible-node d :child))))
     (is (= "Run" (:a11y/name (aria/accessible-node d :child))))))
+
+;; ---- :a11y/selection-start/:a11y/selection-end must clamp to the real
+;; value's own length, never a stale out-of-range offset ----
+;;
+;; Real bug this guards: previously copied straight from the node's own
+;; attrs with zero validation against the real value's length -- the
+;; exact same root-cause bug cssom.layout's own sel-ops already had to
+;; guard against. The JS-facing value setter (browser.compat.quickjs-
+;; wasm) has no spec-mandated selection-reset, so a real, ordinary
+;; script sequence (set a longer value, select a range, then set a
+;; SHORTER value) leaves stale offsets exceeding the new value's own
+;; length -- exposed on the public accessibility-tree API assistive
+;; tech and browser-use both read for form-field semantics. Confirmed
+;; via direct REPL reproduction before touching source.
+
+(deftest accessible-node-clamps-a-stale-selection-exceeding-the-shortened-values-length
+  (let [d (doc [(el :field :input {:value "Ko" :selection-start "1" :selection-end "4"})]
+               :field)
+        field (aria/accessible-node d :field)]
+    (is (= "Ko" (:a11y/value field)))
+    (is (= 1 (:a11y/selection-start field))
+        "still in range, unaffected")
+    (is (= 2 (:a11y/selection-end field))
+        "clamped down to the value's own 2-character length, not the stale 4")))
+
+(deftest accessible-node-clamps-a-negative-selection-start-to-zero
+  (let [d (doc [(el :field :input {:value "hi" :selection-start "-5" :selection-end "1"})]
+               :field)
+        field (aria/accessible-node d :field)]
+    (is (= 0 (:a11y/selection-start field)))
+    (is (= 1 (:a11y/selection-end field)))))
+
+(deftest accessible-node-clamps-both-offsets-to-zero-on-an-empty-value
+  (let [d (doc [(el :field :input {:value "" :selection-start "3" :selection-end "5"})]
+               :field)
+        field (aria/accessible-node d :field)]
+    (is (= "" (:a11y/value field)))
+    (is (= 0 (:a11y/selection-start field)))
+    (is (= 0 (:a11y/selection-end field)))))
