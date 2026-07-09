@@ -12,6 +12,7 @@
    :article "article"
    :aside "complementary"
    :form "form"
+   :search "search"
    :p "paragraph"
    :blockquote "blockquote"
    :pre "code"

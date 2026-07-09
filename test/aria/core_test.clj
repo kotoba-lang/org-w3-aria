@@ -39,7 +39,7 @@
   (let [d (doc [(el :page :main {} [:link :anchor :para :quote :pre-el :code-el
                                      :strong-el :em-el :dl-el :figure-el :ul-el
                                      :header-el :footer-el :nav-el :section-el
-                                     :article-el :aside-el :form-el
+                                     :article-el :aside-el :form-el :search-el
                                      :h1-el :h2-el :h3-el])
                 (el :link :a {:href "/docs"} [:link-txt])
                 (txt :link-txt "Docs")
@@ -75,6 +75,7 @@
                 (el :article-el :article)
                 (el :aside-el :aside)
                 (el :form-el :form)
+                (el :search-el :search)
                 (el :h1-el :h1 {} [:h1-txt])
                 (txt :h1-txt "One")
                 (el :h2-el :h2 {} [:h2-txt])
@@ -118,6 +119,10 @@
     (is (= "article" (:a11y/role (find-by-id tree :article-el))))
     (is (= "complementary" (:a11y/role (find-by-id tree :aside-el))))
     (is (= "generic" (:a11y/role (find-by-id tree :form-el))))
+    ;; Unlike :section/:form, HTML-AAM does not gate <search>'s landmark
+    ;; role on having an accessible name -- it applies unconditionally,
+    ;; same as :nav/:aside/:article.
+    (is (= "search" (:a11y/role (find-by-id tree :search-el))))
     (is (= "heading" (:a11y/role (find-by-id tree :h1-el))))
     (is (= 1 (:a11y/level (find-by-id tree :h1-el))))
     (is (= 2 (:a11y/level (find-by-id tree :h2-el))))
@@ -225,6 +230,37 @@
         "no aria-label/aria-labelledby at all -- must not become a landmark")
     (is (= "region" (:a11y/role (find-by-id tree :explicit-sec)))
         "an explicit role= attribute always wins over the implicit accessible-name computation")))
+
+;; ---- <search> implicit landmark role -- previously absent from
+;; implicit-roles entirely (unlike every other landmark-bearing
+;; sectioning/landmark element), so a real <search><input
+;; type="search">...</search> region (the standard HTML idiom for a
+;; page's/section's search functionality) fell through to "generic",
+;; silently omitting it from assistive-tech landmark navigation (e.g. a
+;; screen reader's "jump to landmarks" list, which specifically
+;; enumerates search among banner/navigation/main/contentinfo/etc).
+;; Unlike :section/:form, HTML-AAM does not condition this role on an
+;; accessible name. Confirmed via direct REPL reproduction before
+;; touching source. ----
+
+(deftest search-landmark-has-an-unconditional-implicit-role
+  (let [d (doc [(el :page :div {} [:srch])
+                (el :srch :search {} [:srch-input])
+                (el :srch-input :input {:type "search"})]
+               :page)
+        tree (aria/tree d)
+        srch (find-by-id tree :srch)]
+    (is (= "search" (:a11y/role srch))
+        "no accessible-name gate -- unlike :section/:form, <search> is unconditionally a landmark")
+    (is (= "searchbox" (:a11y/role (find-by-id tree :srch-input)))
+        "sanity check: the nested input keeps its own, unrelated implicit role")))
+
+(deftest search-explicit-role-overrides-the-implicit-landmark-role
+  (let [d (doc [(el :page :div {} [:srch])
+                (el :srch :search {:role "form"})]
+               :page)
+        tree (aria/tree d)]
+    (is (= "form" (:a11y/role (find-by-id tree :srch))))))
 
 ;; ---- implicit aria-level for <h3>-<h6> -- previously only :h1/:h2 were
 ;; handled by the case in accessible-node, so h3-h6 (which DO map to role
